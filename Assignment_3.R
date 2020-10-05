@@ -1,98 +1,100 @@
 ### GEOG 418/518 ###
 ### LAB 3 - SPATIAL AUTOCORRELATION ###
-# install.packages("plyr")
-# install.packages("dplyr")
 # install.packages("spdep")
-# install.packages("GISTools")
 # install.packages("raster")
-# install.packages("maptools")
 # install.packages("rgdal")
 # install.packages("tmap")
-# install.packages("BAMMtools")
 # install.packages("shinyjs")
 
-library(plyr)
-library(dplyr)
-library(spdep)
-library(GISTools)
-library(raster)
-library(maptools)
 library(rgdal)
 library(tmap)
-library(BAMMtools)
-
+library(spdep)
+library(raster)
 
 #######################
 dir <- 
 setwd(dir)
 
 
-tracts <- readOGR(dsn =, layer = "")
+VRI <- readOGR(dsn = , layer = )
+VRI <- spTransform(VRI, CRS("+init=epsg:")) #Find EPSG for NAD83 UTM Zone 10N
 
 
-census.16 <- read.csv("")
+head(VRI@data)
 
+vriCleanCols <- c("FID_VEG_CO", "POLYGON_ID", "PROJ_AGE_1",
+                  "SITE_INDEX", "SPECIES__4", "SPECIES__5",
+                  "PROJ_HEI_1", "SPECIES_PC", "SPECIES__6",
+                  "VRI_LIVE_S", "BASAL_AREA", "WHOLE_STEM",
+                  "CROWN_CL_1")
 
+vriClean <- VRI[,vriCleanCols]
 
-crd.data <- merge(tracts, census.16, by = "GUID")
+#Meta Data (https://www2.gov.bc.ca/assets/gov/farming-natural-resources-and-industry/forestry/stewardship/forest-analysis-inventory/data-management/standards/vegcomp_poly_rank1_data_dictionaryv5_2019.pdf)
+# FID = Field ID
+# PolyID = VRI Polygon ID
+# Stand_Age = Estimated stand age projected to 2020 from estimated establishment date
+# Site_Index = A value to estimate site quality. This describes the height that the stand could grow to by age 50 in meters.
+# CoDom_Sp = The species code for the co-dominant tree species. Full list of codes: https://www.for.gov.bc.ca/hfp/publications/00026/fs708-14-appendix_d.htm
+# Dom_Sp = The species code for the dominant tree species. Full list of codes: https://www.for.gov.bc.ca/hfp/publications/00026/fs708-14-appendix_d.htm
+# Stand_HT = The estimated height for the stand
+# DomSP_Perc = The estimated percentage of the dominent species
+# CDomSP_Perc = The estimated percentage of the co-dominent species
+# Stand_Dens = Estimated density of stand (Stems per hectare)
+# Stand_BA = Estimated Basal area of the stand (square meters)
+# Stand_StemBio = Estimated stand level stem biomass (tonnes per hectare)
+# Stand_CrownCl = The percentage of ground area covered by tree crowns
 
-crd.data <- crd.data[!is.na(crd.data$MInc),]
+newNames <- c("FID", "PolyID", "Stand_Age", "Site_Index",
+              "CoDom_Sp", "Dom_Sp", "Stand_HT", "DomSP_Perc", 
+              "CDomSP_Perc", "Stand_Dens", "Stand_BA", "Stand_StemBio", "Stand_CrownCl")
 
+colnames(vriClean@data) <- newNames
+head(vriClean@data)
 
-class(crd.data)
-summary(crd.data)
+#Choose a Variable
+vriClean <- vriClean[!is.na(vriClean@data$VARIABLE), ]
+
 ########################
 
 ########################
 tmaptools::palette_explorer() #Tool for selecting pallettes
 
-map_PopDens <- tm_shape(crd.data) + 
-  tm_polygons(col = "MdInc", 
-              title = "Median Income", 
+map_StdHT <- tm_shape(vriClean) + 
+  tm_polygons(col = "VARIABLE", 
+              title = "VARIABLE", 
               style = "jenks", 
               palette = "viridis", n = 6)
 
-map_PopDens
+map_StdHT
 ########################
 
 
 ########################
-crd.nb <- poly2nb(crd.data)
-crd.net <- nb2lines(crd.nb,coords=coordinates(crd.data))
+vri.nb <- poly2nb(vriClean)
+vri.net <- nb2lines(vri.nb, coords=coordinates(vriClean))
+crs(vri.net) <- crs(vriClean)
+
+tm_shape(vriClean) + tm_borders(col='lightgrey') + 
+  tm_shape(vri.net) + tm_lines(col='red')
 
 
-tm_shape(crd.data) + tm_borders(col='lightgrey') + 
-  tm_shape(crd.net) + tm_lines(col='red')
+vri.nb2 <- poly2nb(vriClean, queen = FALSE)
+vri.net2 <- nb2lines(vri.nb2, coords=coordinates(vriClean))
+crs(vri.net2) <- crs(vriClean)
 
-
-crd.nb2 <- poly2nb(crd.data, queen = FALSE)
-crd.net2 <- nb2lines(crd.nb2,coords=coordinates(crd.data))
-
-
-tm_shape(crd.data) + tm_borders(col='lightgrey') + 
-  tm_shape(crd.net) + tm_lines(col='blue', lwd = 2) +
-  tm_shape(crd.net2) + tm_lines(col='yellow', lwd = 2)
+tm_shape(vriClean) + tm_borders(col='lightgrey') + 
+  tm_shape(vri.net) + tm_lines(col='blue', lwd = 2) +
+  tm_shape(vri.net2) + tm_lines(col='yellow', lwd = 2)
 ########################
 
-crd.lw <- nb2listw(crd.nb, zero.policy = TRUE, style = "W")
-print.listw(crd.lw, zero.policy = TRUE)
+vri.lw <- nb2listw(vri.nb, zero.policy = TRUE, style = "W")
+print.listw(vri.lw, zero.policy = TRUE)
 
 ########################
-crd.data$IncLagMeans = lag.listw(crd.lw, crd.data$MdInc, zero.policy = TRUE)
-
-
-map_LagMean <- tm_shape(crd.data) + 
-  tm_polygons(col = "IncLagMeans", 
-              title = "Median Income\nLagged Means", 
-              style = "jenks", 
-              palette = "viridis", n = 6) 
-  
-
-map_LagMean
-
 
 ########################
-mi <- moran.test(crd.data$MdInc, crd.lw, zero.policy = TRUE)
+mi <- moran.test(vriClean$VARIABLE, vri.lw, zero.policy = TRUE)
 mi
 
 
@@ -100,7 +102,7 @@ moran.range <- function(lw) {
   wmat <- listw2mat(lw)
   return(range(eigen((wmat + t(wmat))/2)$values))
 }
-moran.range(crd.lw)
+moran.range(vri.lw)
 
 
 mI <- mi$estimate[[1]]
@@ -110,17 +112,15 @@ var <- mi$estimate[[3]]
 z <-
   
 ########################  
-  
-lisa.test <- localmoran(crd.data$MdInc, crd.lw)
+lisa.test <- localmoran(vriClean$Stand_HT, vri.lw)
 
-crd.data$Ii <- lisa.test[,1]
-crd.data$E.Ii<- lisa.test[,2]
-crd.data$Var.Ii<- lisa.test[,3]
-crd.data$Z.Ii<- lisa.test[,4]
-crd.data$P<- lisa.test[,5]
+vriClean$Ii <- lisa.test[,1]
+vriClean$E.Ii<- lisa.test[,2]
+vriClean$Var.Ii<- lisa.test[,3]
+vriClean$Z.Ii<- lisa.test[,4]
+vriClean$P<- lisa.test[,5]
 ########################
-
-map_LISA <- tm_shape(crd.data) + 
+map_LISA <- tm_shape(vriClean) + 
   tm_polygons(col = "Ii", 
               title = "Local Moran's I", 
               style = "jenks", 
@@ -129,8 +129,6 @@ map_LISA <- tm_shape(crd.data) +
 
 map_LISA
 ########################
-
-
-moran.plot(crd.data$MdInc, crd.lw, zero.policy=NULL, spChk=NULL, labels=NULL, xlab="Population Density", 
-           ylab="Spatially Lagged Population Density", quiet=NULL)
+moran.plot(vriClean$Stand_HT, vri.lw, zero.policy=TRUE, spChk=NULL, labels=NULL, xlab="Some Variable", 
+           ylab="Spatially Lagged Variable", quiet=NULL)
 ########################
